@@ -13,6 +13,8 @@
 #include <QJsonDocument>
 #include <QHttpMultiPart>
 #include <QBuffer>
+#include <QLabel>
+#include <QFormLayout>
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent), mServerUrl("http://stas.pubsandbox.eterhost.ru/rest-test/public/api"),
@@ -20,10 +22,13 @@ MainWindow::MainWindow(QWidget *parent) :
 {
 	QPushButton *infoReqPB = new QPushButton(tr("Info request"));
 	infoReqPB->setObjectName("info");
+	infoReqPB->setProperty("requestType", QVariant::fromValue(QNetworkAccessManager::GetOperation));
 	QPushButton *authReqPB = new QPushButton(tr("Authenticate request"));
 	authReqPB->setObjectName("authenticate");
+	authReqPB->setProperty("requestType", QVariant::fromValue(QNetworkAccessManager::PostOperation));
 	QPushButton *userInfoReqPB = new QPushButton(tr("User Info request"));
 	userInfoReqPB->setObjectName("userinfo");
+	userInfoReqPB->setProperty("requestType", QVariant::fromValue(QNetworkAccessManager::GetOperation));
 	userInfoReqPB->setDisabled(true);
 
 	QButtonGroup *buttonGroup = new QButtonGroup(this);
@@ -32,9 +37,27 @@ MainWindow::MainWindow(QWidget *parent) :
 	buttonGroup->addButton(userInfoReqPB);
 	connect(buttonGroup, static_cast<void (QButtonGroup::*)(QAbstractButton*)>(&QButtonGroup::buttonClicked),
 			[=] (QAbstractButton *button) {
-		QString requestUrl = buildUrl(button->objectName());
-		QString data = buildData(button->objectName());
-		setRequest(requestUrl, data);
+		QString name = button->objectName();
+		QString url = buildUrl(name);
+		auto requestType = button->property("requestType").value<QNetworkAccessManager::Operation>();
+		QNetworkRequest request(url);
+		if (name == "userinfo")
+		{
+			request.setHeader(QNetworkRequest::ContentTypeHeader, "Authorization");
+			request.setRawHeader("Authorization", buildData(name));
+		}
+		else
+		{
+			request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+		}
+		if (requestType == QNetworkAccessManager::GetOperation)
+		{
+			networkManager->get(request);
+		}
+		else if (requestType == QNetworkAccessManager::PostOperation)
+		{
+			networkManager->post(request, buildData(name));
+		}
 	});
 
 	QWidget *window = new QWidget(this);
@@ -54,7 +77,57 @@ MainWindow::MainWindow(QWidget *parent) :
 		{
 			setToken(jsonObject.value("token").toString());
 		}
+		updateView(jsonObject);
 	});
+
+	QLabel *nameServerLbl = new QLabel;
+	nameServerLbl->setObjectName("nameserver");
+	QLabel *versionLbl = new QLabel;
+	versionLbl->setObjectName("version");
+
+
+	QLabel *createdAtLbl = new QLabel;
+	createdAtLbl->setObjectName("created_at");
+	QLabel *emailLbl = new QLabel;
+	emailLbl->setObjectName("email");
+	QLabel *firstNameLbl = new QLabel;
+	firstNameLbl->setObjectName("first_name");
+	QLabel *lastNameLbl = new QLabel;
+	lastNameLbl->setObjectName("last_name");
+	QLabel *middleNameLbl = new QLabel;
+	middleNameLbl->setObjectName("middle_name");
+	QLabel *idLbl = new QLabel;
+	idLbl->setObjectName("id");
+
+
+	QLabel *sipPasswordLbl = new QLabel;
+	sipPasswordLbl->setObjectName("sip.password");
+	QLabel *sipRegistrationUriLbl = new QLabel;
+	sipRegistrationUriLbl->setObjectName("sip.registration_uri");
+	QLabel *sipUriLbl = new QLabel;
+	sipUriLbl->setObjectName("sip.uri");
+	QLabel *sipUserNameLbl = new QLabel;
+	sipUserNameLbl->setObjectName("sip.username");
+
+
+	QLabel *updatedAtLbl = new QLabel;
+	updatedAtLbl->setObjectName("updated_at");
+
+	QFormLayout *parametersLayout = new QFormLayout;
+	parametersLayout->addRow("Name server", nameServerLbl);
+	parametersLayout->addRow("Version", versionLbl);
+	parametersLayout->addRow("Created at", createdAtLbl);
+	parametersLayout->addRow("Email", emailLbl);
+	parametersLayout->addRow("First name", firstNameLbl);
+	parametersLayout->addRow("Last name", lastNameLbl);
+	parametersLayout->addRow("Middle name", middleNameLbl);
+	parametersLayout->addRow("Id", idLbl);
+	parametersLayout->addRow("Sip password", sipPasswordLbl);
+	parametersLayout->addRow("Sip registration uri", sipRegistrationUriLbl);
+	parametersLayout->addRow("Sip uri", sipUriLbl);
+	parametersLayout->addRow("Sip username", sipUserNameLbl);
+	parametersLayout->addRow("Updated at", updatedAtLbl);
+	mainLayout->addLayout(parametersLayout);
 }
 
 QString MainWindow::buildUrl(const QString &extraPath)
@@ -64,17 +137,18 @@ QString MainWindow::buildUrl(const QString &extraPath)
 			extraPath;
 }
 
-QString MainWindow::buildData(const QString &extraPath)
+QByteArray MainWindow::buildData(const QString &extraPath)
 {
+	QString result;
 	if (extraPath == "authenticate")
 	{
-		return QString("email=%0&password=%1").arg(mUserName, mUserPassword);
+		result = QString("email=%0&password=%1").arg(mUserName, mUserPassword);
 	}
 	if (extraPath == "userinfo")
 	{
-		return QString("Bearer %0").arg(mToken);
+		result = QString("Bearer %0").arg(mToken);
 	}
-	return QString();
+	return result.toUtf8();
 }
 
 MainWindow::~MainWindow()
@@ -90,27 +164,35 @@ void MainWindow::setToken(const QString &token)
 	}
 }
 
-void MainWindow::setRequest(const QString &url, const QString &data)
+void MainWindow::updateView(QJsonObject jsonObject, const QString &parentKey)
 {
-	qDebug() << url << data;
-	QString requestType = data.isEmpty() ? "GET" : "POST";
-	QNetworkRequest request = QNetworkRequest(QUrl(url));
-	if (requestType == "GET")
+	QJsonObject::iterator it = jsonObject.begin();
+	while (it != jsonObject.end())
 	{
-		networkManager->get(request);
+		if (it.value().isObject())
+		{
+			updateView(it.value().toObject(), it.key());
+			it++;
+		}
+		QString key = (!parentKey.isEmpty() ? parentKey + "." : "") + it.key();
+		if (QLabel *label = findChild<QLabel*>(key))
+		{
+			updateLabel(label, it.value());
+		}
+		it++;
+	}
+}
+
+void MainWindow::updateLabel(QLabel *label, const QJsonValueRef &value)
+{
+	if (value.isDouble())
+	{
+		label->setText(QString::number(value.toDouble()));
 	}
 	else
 	{
-		if (url.contains("userinfo"))
-		{
-			request.setHeader(QNetworkRequest::ContentTypeHeader, "Authorization");
-			request.setRawHeader("Authorization", data.toUtf8());
-			networkManager->get(request);
-		}
-		else
-		{
-			request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
-			networkManager->post(request, data.toUtf8());
-		}
+		label->setText(value.toString());
 	}
 }
+
+Q_DECLARE_METATYPE(QNetworkAccessManager::Operation)

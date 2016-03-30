@@ -3,7 +3,9 @@
 
 #include <QMainWindow>
 
+class QLabel;
 class QNetworkAccessManager;
+class QJsonValueRef;
 
 class MainWindow : public QMainWindow
 {
@@ -13,12 +15,14 @@ public:
 	explicit MainWindow(QWidget *parent = 0);
 	~MainWindow();
 
+	void updateView(QJsonObject jsonObject, const QString &parentKey = QString());
+
+	void updateLabel(QLabel *label, const QJsonValueRef &value);
 private:
 	void setToken(const QString &token);
-	void setRequest(const QString &url, const QString &data);
 
 	QString buildUrl(const QString &extraPath);
-	QString buildData(const QString &extraPath);
+	QByteArray buildData(const QString &extraPath);
 
 	QString mServerUrl;
 	QString mUserName;
