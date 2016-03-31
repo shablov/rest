@@ -20,6 +20,18 @@ MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent), mServerUrl("http://stas.pubsandbox.eterhost.ru/rest-test/public/api"),
 	mUserName("testuser"), mUserPassword("testuser"), networkManager(0)
 {
+	networkManager = new QNetworkAccessManager(this);
+	connect(networkManager, &QNetworkAccessManager::finished, [=] (QNetworkReply *reply) {
+		QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll());
+		QJsonObject jsonObject = jsonDoc.object();
+		qDebug() << jsonObject;
+		if (jsonObject.contains("token"))
+		{
+			setToken(jsonObject.value("token").toString());
+		}
+		updateView(jsonObject);
+	});
+
 	QPushButton *infoReqPB = new QPushButton(tr("Info request"));
 	infoReqPB->setObjectName("info");
 	infoReqPB->setProperty("requestType", QVariant::fromValue(QNetworkAccessManager::GetOperation));
@@ -36,29 +48,7 @@ MainWindow::MainWindow(QWidget *parent) :
 	buttonGroup->addButton(authReqPB);
 	buttonGroup->addButton(userInfoReqPB);
 	connect(buttonGroup, static_cast<void (QButtonGroup::*)(QAbstractButton*)>(&QButtonGroup::buttonClicked),
-			[=] (QAbstractButton *button) {
-		QString name = button->objectName();
-		QString url = buildUrl(name);
-		auto requestType = button->property("requestType").value<QNetworkAccessManager::Operation>();
-		QNetworkRequest request(url);
-		if (name == "userinfo")
-		{
-			request.setHeader(QNetworkRequest::ContentTypeHeader, "Authorization");
-			request.setRawHeader("Authorization", buildData(name));
-		}
-		else
-		{
-			request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
-		}
-		if (requestType == QNetworkAccessManager::GetOperation)
-		{
-			networkManager->get(request);
-		}
-		else if (requestType == QNetworkAccessManager::PostOperation)
-		{
-			networkManager->post(request, buildData(name));
-		}
-	});
+			this, &MainWindow::onButtonClicked);
 
 	QWidget *window = new QWidget(this);
 	setCentralWidget(window);
@@ -68,23 +58,10 @@ MainWindow::MainWindow(QWidget *parent) :
 		mainLayout->addWidget(button);
 	}
 
-	networkManager = new QNetworkAccessManager(this);
-	connect(networkManager, &QNetworkAccessManager::finished, [=] (QNetworkReply *reply) {
-		QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll());
-		QJsonObject jsonObject = jsonDoc.object();
-		qDebug() << jsonObject;
-		if (jsonObject.contains("token"))
-		{
-			setToken(jsonObject.value("token").toString());
-		}
-		updateView(jsonObject);
-	});
-
 	QLabel *nameServerLbl = new QLabel;
 	nameServerLbl->setObjectName("nameserver");
 	QLabel *versionLbl = new QLabel;
 	versionLbl->setObjectName("version");
-
 
 	QLabel *createdAtLbl = new QLabel;
 	createdAtLbl->setObjectName("created_at");
@@ -99,7 +76,6 @@ MainWindow::MainWindow(QWidget *parent) :
 	QLabel *idLbl = new QLabel;
 	idLbl->setObjectName("id");
 
-
 	QLabel *sipPasswordLbl = new QLabel;
 	sipPasswordLbl->setObjectName("sip.password");
 	QLabel *sipRegistrationUriLbl = new QLabel;
@@ -108,7 +84,6 @@ MainWindow::MainWindow(QWidget *parent) :
 	sipUriLbl->setObjectName("sip.uri");
 	QLabel *sipUserNameLbl = new QLabel;
 	sipUserNameLbl->setObjectName("sip.username");
-
 
 	QLabel *updatedAtLbl = new QLabel;
 	updatedAtLbl->setObjectName("updated_at");
@@ -128,6 +103,31 @@ MainWindow::MainWindow(QWidget *parent) :
 	parametersLayout->addRow("Sip username", sipUserNameLbl);
 	parametersLayout->addRow("Updated at", updatedAtLbl);
 	mainLayout->addLayout(parametersLayout);
+}
+
+void MainWindow::onButtonClicked(QAbstractButton *button)
+{
+	QString name = button->objectName();
+	QString url = buildUrl(name);
+	auto requestType = button->property("requestType").value<QNetworkAccessManager::Operation>();
+	QNetworkRequest request(url);
+	if (name == "userinfo")
+	{
+		request.setHeader(QNetworkRequest::ContentTypeHeader, "Authorization");
+		request.setRawHeader("Authorization", buildData(name));
+	}
+	else
+	{
+		request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+	}
+	if (requestType == QNetworkAccessManager::GetOperation)
+	{
+		networkManager->get(request);
+	}
+	else if (requestType == QNetworkAccessManager::PostOperation)
+	{
+		networkManager->post(request, buildData(name));
+	}
 }
 
 QString MainWindow::buildUrl(const QString &extraPath)
@@ -151,10 +151,6 @@ QByteArray MainWindow::buildData(const QString &extraPath)
 	return result.toUtf8();
 }
 
-MainWindow::~MainWindow()
-{
-}
-
 void MainWindow::setToken(const QString &token)
 {
 	mToken = token;
@@ -166,33 +162,26 @@ void MainWindow::setToken(const QString &token)
 
 void MainWindow::updateView(QJsonObject jsonObject, const QString &parentKey)
 {
-	QJsonObject::iterator it = jsonObject.begin();
-	while (it != jsonObject.end())
+	for (QJsonObject::iterator it = jsonObject.begin(); it != jsonObject.end(); it++)
 	{
-		if (it.value().isObject())
-		{
-			updateView(it.value().toObject(), it.key());
-			it++;
-		}
 		QString key = (!parentKey.isEmpty() ? parentKey + "." : "") + it.key();
+		QJsonValueRef value = it.value();
+		if (value.isObject())
+		{
+			updateView(value.toObject(), key);
+			continue;
+		}
+
 		if (QLabel *label = findChild<QLabel*>(key))
 		{
-			updateLabel(label, it.value());
+			updateLabel(label, value);
 		}
-		it++;
 	}
 }
 
 void MainWindow::updateLabel(QLabel *label, const QJsonValueRef &value)
 {
-	if (value.isDouble())
-	{
-		label->setText(QString::number(value.toDouble()));
-	}
-	else
-	{
-		label->setText(value.toString());
-	}
+	label->setText(value.toVariant().toString());
 }
 
 Q_DECLARE_METATYPE(QNetworkAccessManager::Operation)
