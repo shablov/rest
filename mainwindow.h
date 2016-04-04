@@ -6,6 +6,7 @@
 class QAbstractButton;
 class QLabel;
 class QNetworkAccessManager;
+class QNetworkReply;
 class QJsonValueRef;
 
 class MainWindow : public QMainWindow
@@ -17,6 +18,7 @@ public:
 
 private slots:
 	void onButtonClicked(QAbstractButton *button);
+	void onNetworkReplyFinished(QNetworkReply *reply);
 
 private:
 	void setToken(const QString &token);

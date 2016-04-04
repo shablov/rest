@@ -15,22 +15,14 @@
 #include <QBuffer>
 #include <QLabel>
 #include <QFormLayout>
+#include <QMetaEnum>
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent), mServerUrl("http://stas.pubsandbox.eterhost.ru/rest-test/public/api"),
 	mUserName("testuser"), mUserPassword("testuser"), networkManager(0)
 {
 	networkManager = new QNetworkAccessManager(this);
-	connect(networkManager, &QNetworkAccessManager::finished, [=] (QNetworkReply *reply) {
-		QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll());
-		QJsonObject jsonObject = jsonDoc.object();
-		qDebug() << jsonObject;
-		if (jsonObject.contains("token"))
-		{
-			setToken(jsonObject.value("token").toString());
-		}
-		updateView(jsonObject);
-	});
+	connect(networkManager, &QNetworkAccessManager::finished, this, &MainWindow::onNetworkReplyFinished);
 
 	QPushButton *infoReqPB = new QPushButton(tr("Info request"));
 	infoReqPB->setObjectName("info");
@@ -103,6 +95,25 @@ MainWindow::MainWindow(QWidget *parent) :
 	parametersLayout->addRow("Sip username", sipUserNameLbl);
 	parametersLayout->addRow("Updated at", updatedAtLbl);
 	mainLayout->addLayout(parametersLayout);
+}
+
+void MainWindow::onNetworkReplyFinished(QNetworkReply *reply)
+{
+	QNetworkReply::NetworkError error = reply->error();
+	if (error != QNetworkReply::NoError)
+	{
+		QMetaEnum metaEnum = QMetaEnum::fromType<QNetworkReply::NetworkError>();
+		QMessageBox::warning(this, tr("Error"), metaEnum.valueToKey(error));
+		return;
+	}
+
+	QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll());
+	QJsonObject jsonObject = jsonDoc.object();
+	if (jsonObject.contains("token"))
+	{
+		setToken(jsonObject.value("token").toString());
+	}
+	updateView(jsonObject);
 }
 
 void MainWindow::onButtonClicked(QAbstractButton *button)
